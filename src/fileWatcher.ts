@@ -3,11 +3,14 @@ import * as vscode from "vscode";
 import { expandHome, pathBasename, pathDirname } from "./paths";
 import type { ExtensionSettings } from "./types";
 
+const FULL_RESYNC_INTERVAL_MS = 5000;
+
 export class FileWatcherService implements vscode.Disposable {
   private watchers: fs.FSWatcher[] = [];
   private refreshTimer: ReturnType<typeof setInterval> | undefined;
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly fileMtimes = new Map<string, number>();
+  private lastFullRefreshMs = 0;
 
   constructor(
     private readonly settings: ExtensionSettings,
@@ -37,7 +40,11 @@ export class FileWatcherService implements vscode.Disposable {
     }
 
     this.refreshTimer = setInterval(() => {
-      if (this.pollStateFiles(stateFiles)) {
+      const nowMs = Date.now();
+      const fullResyncDue = nowMs - this.lastFullRefreshMs >= FULL_RESYNC_INTERVAL_MS;
+
+      if (this.pollStateFiles(stateFiles) || fullResyncDue) {
+        this.lastFullRefreshMs = nowMs;
         this.onRefresh();
       }
     }, this.settings.refreshIntervalMs);
@@ -49,6 +56,7 @@ export class FileWatcherService implements vscode.Disposable {
     }
     this.watchers = [];
     this.fileMtimes.clear();
+    this.lastFullRefreshMs = 0;
 
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);

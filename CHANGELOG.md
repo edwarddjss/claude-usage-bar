@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.16] - 2026-06-11
+
+### Fixed
+- Status bar now periodically resyncs shared bridge files from disk so one editor window can catch usage updates written by another window even if a file-watch event is missed
+
 ## [1.2.15] - 2026-06-11
 
 ### Changed
