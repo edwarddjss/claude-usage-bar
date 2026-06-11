@@ -1,0 +1,173 @@
+{
+  "name": "claude-usage-bar",
+  "displayName": "AI Usage Bar",
+  "description": "Live Claude Code and Codex rate-limit usage in your status bar. Privacy-first, local bridge files, works in VS Code and Cursor.",
+  "version": "0.3.0",
+  "publisher": "edwarddjss",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edwarddjss/claude-usage-bar"
+  },
+  "bugs": {
+    "url": "https://github.com/edwarddjss/claude-usage-bar/issues"
+  },
+  "homepage": "https://github.com/edwarddjss/claude-usage-bar#readme",
+  "qna": "https://github.com/edwarddjss/claude-usage-bar/issues",
+  "keywords": [
+    "claude",
+    "codex",
+    "cursor",
+    "usage",
+    "status bar",
+    "ai",
+    "rate limit",
+    "claude code",
+    "openai"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeUsageBar.openDashboard",
+        "title": "AI Usage: Open Dashboard",
+        "category": "AI Usage"
+      },
+      {
+        "command": "claudeUsageBar.refresh",
+        "title": "AI Usage: Refresh",
+        "category": "AI Usage"
+      },
+      {
+        "command": "claudeUsageBar.copyBridgeSetup",
+        "title": "AI Usage: Copy Bridge Setup",
+        "category": "AI Usage"
+      },
+      {
+        "command": "claudeUsageBar.installBridgeScripts",
+        "title": "AI Usage: Install Bridge Scripts",
+        "category": "AI Usage"
+      },
+      {
+        "command": "claudeUsageBar.openStateFile",
+        "title": "AI Usage: Open Claude State File",
+        "category": "AI Usage"
+      },
+      {
+        "command": "claudeUsageBar.openCodexStateFile",
+        "title": "AI Usage: Open Codex State File",
+        "category": "AI Usage"
+      }
+    ],
+    "configuration": {
+      "title": "AI Usage Bar",
+      "properties": {
+        "claudeUsageBar.claudeStatePath": {
+          "type": "string",
+          "default": "~/.ai-usage-bridge/claude.json",
+          "description": "Path to the Claude bridge state JSON file."
+        },
+        "claudeUsageBar.codexStatePath": {
+          "type": "string",
+          "default": "~/.ai-usage-bridge/codex.json",
+          "description": "Path to the Codex bridge state JSON file."
+        },
+        "claudeUsageBar.statePath": {
+          "type": "string",
+          "default": "~/.claude-usage-bridge/state.json",
+          "description": "Legacy Claude state path used as a fallback."
+        },
+        "claudeUsageBar.claudeIdeLockDir": {
+          "type": "string",
+          "default": "~/.claude/ide",
+          "description": "Directory containing Claude Code IDE lock files for workspace activity detection."
+        },
+        "claudeUsageBar.displayMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "claude",
+            "codex",
+            "both"
+          ],
+          "default": "auto",
+          "description": "Which sources to show. auto picks based on live activity and focused terminal."
+        },
+        "claudeUsageBar.activeThresholdMs": {
+          "type": "number",
+          "default": 15000,
+          "minimum": 3000,
+          "description": "How recently a bridge file must have updated to count as live."
+        },
+        "claudeUsageBar.primaryMetric": {
+          "type": "string",
+          "enum": [
+            "fiveHour",
+            "sevenDay",
+            "context"
+          ],
+          "default": "fiveHour",
+          "description": "Which usage metric to show in the status bar."
+        },
+        "claudeUsageBar.statusBarAlignment": {
+          "type": "string",
+          "enum": [
+            "right",
+            "left"
+          ],
+          "default": "right",
+          "description": "Status bar alignment."
+        },
+        "claudeUsageBar.refreshIntervalMs": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 250,
+          "description": "How often to refresh the status bar for countdowns (milliseconds)."
+        },
+        "claudeUsageBar.barWidth": {
+          "type": "number",
+          "default": 8,
+          "minimum": 4,
+          "maximum": 20,
+          "description": "Number of characters in the progress bar."
+        },
+        "claudeUsageBar.showIcon": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a codicon before the status bar text."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "pnpm run compile && vsce package --no-dependencies",
+    "test": "pnpm run compile && node --test test/*.test.js",
+    "lint": "tsc -p ./ --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.26.0",
+    "typescript": "^5.5.0"
+  }
+}
