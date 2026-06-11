@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.17] - 2026-06-11
+
+### Fixed
+- Replaced raw file-system watching with VS Code file watchers for shared usage state files
+- Added content fingerprint reconciliation so missed cross-window file events are caught without repainting unchanged status-bar text
+
 ## [1.2.16] - 2026-06-11
 
 ### Fixed

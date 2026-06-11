@@ -1,16 +1,23 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
 import { expandHome, pathBasename, pathDirname } from "./paths";
+import {
+  readStateFileFingerprint,
+  sameFingerprint,
+  type StateFileFingerprint,
+} from "./stateFileFingerprint";
 import type { ExtensionSettings } from "./types";
 
-const FULL_RESYNC_INTERVAL_MS = 5000;
+const CONTENT_VERIFY_INTERVAL_MS = 5000;
+const WATCH_DEBOUNCE_MS = 250;
 
 export class FileWatcherService implements vscode.Disposable {
-  private watchers: fs.FSWatcher[] = [];
+  private watchers: vscode.FileSystemWatcher[] = [];
   private refreshTimer: ReturnType<typeof setInterval> | undefined;
   private debounceTimer: ReturnType<typeof setTimeout> | undefined;
-  private readonly fileMtimes = new Map<string, number>();
-  private lastFullRefreshMs = 0;
+  private stateFiles: string[] = [];
+  private readonly fingerprints = new Map<string, StateFileFingerprint>();
+  private lastContentVerifyMs = 0;
 
   constructor(
     private readonly settings: ExtensionSettings,
@@ -20,31 +27,33 @@ export class FileWatcherService implements vscode.Disposable {
   start(): void {
     this.stop();
 
-    const stateFiles = [
+    this.stateFiles = [
       expandHome(this.settings.claudeStatePath),
       expandHome(this.settings.codexStatePath),
       expandHome(this.settings.legacyStatePath),
     ];
+    const watchedStateFiles = new Set(this.stateFiles);
 
-    const watchedFiles = new Set(stateFiles.map(pathBasename));
-
-    const watchedDirs = new Set([
-      pathDirname(this.settings.claudeStatePath),
-      pathDirname(this.settings.codexStatePath),
-      pathDirname(this.settings.legacyStatePath),
-      expandHome(this.settings.claudeIdeLockDir),
-    ]);
-
-    for (const directory of watchedDirs) {
-      this.watchDirectory(directory, watchedFiles);
+    for (const filePath of watchedStateFiles) {
+      this.watchFile(filePath);
     }
+
+    this.watchClaudeIdeLocks(expandHome(this.settings.claudeIdeLockDir));
+    this.primeStateFileFingerprints();
 
     this.refreshTimer = setInterval(() => {
       const nowMs = Date.now();
-      const fullResyncDue = nowMs - this.lastFullRefreshMs >= FULL_RESYNC_INTERVAL_MS;
+      const verifyContents = nowMs - this.lastContentVerifyMs >= CONTENT_VERIFY_INTERVAL_MS;
 
-      if (this.pollStateFiles(stateFiles) || fullResyncDue) {
-        this.lastFullRefreshMs = nowMs;
+      if (verifyContents) {
+        if (this.pollStateFiles(true)) {
+          this.onRefresh();
+        }
+        this.lastContentVerifyMs = nowMs;
+        return;
+      }
+
+      if (this.pollStateFiles(false)) {
         this.onRefresh();
       }
     }, this.settings.refreshIntervalMs);
@@ -52,11 +61,12 @@ export class FileWatcherService implements vscode.Disposable {
 
   stop(): void {
     for (const watcher of this.watchers) {
-      watcher.close();
+      watcher.dispose();
     }
     this.watchers = [];
-    this.fileMtimes.clear();
-    this.lastFullRefreshMs = 0;
+    this.stateFiles = [];
+    this.fingerprints.clear();
+    this.lastContentVerifyMs = 0;
 
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
@@ -73,57 +83,69 @@ export class FileWatcherService implements vscode.Disposable {
     this.stop();
   }
 
-  private pollStateFiles(stateFiles: string[]): boolean {
+  private primeStateFileFingerprints(): void {
+    this.lastContentVerifyMs = Date.now();
+
+    for (const filePath of this.stateFiles) {
+      this.fingerprints.set(filePath, readStateFileFingerprint(filePath, true));
+    }
+  }
+
+  private pollStateFiles(includeContent: boolean): boolean {
     let changed = false;
 
-    for (const filePath of stateFiles) {
-      try {
-        if (!fs.existsSync(filePath)) {
-          continue;
-        }
+    for (const filePath of this.stateFiles) {
+      const next = readStateFileFingerprint(filePath, includeContent);
+      const previous = this.fingerprints.get(filePath);
 
-        const mtime = fs.statSync(filePath).mtimeMs;
-        const previous = this.fileMtimes.get(filePath);
-
-        if (previous == null) {
-          this.fileMtimes.set(filePath, mtime);
-          continue;
-        }
-
-        if (mtime !== previous) {
-          this.fileMtimes.set(filePath, mtime);
-          changed = true;
-        }
-      } catch {
-        // Best effort.
+      if (!sameFingerprint(previous, next, includeContent)) {
+        this.fingerprints.set(filePath, next);
+        changed = true;
       }
     }
 
     return changed;
   }
 
-  private watchDirectory(directory: string, watchedFiles: Set<string>): void {
+  private watchFile(filePath: string): void {
+    const directory = pathDirname(filePath);
+    const filename = pathBasename(filePath);
+
     try {
       if (!fs.existsSync(directory)) {
         fs.mkdirSync(directory, { recursive: true });
       }
 
-      const watcher = fs.watch(directory, (_eventType, filename) => {
-        if (!filename) {
-          this.scheduleRefresh();
-          return;
-        }
-
-        const name = filename.toString();
-        if (watchedFiles.has(name) || name.endsWith(".lock")) {
-          this.scheduleRefresh();
-        }
-      });
-
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(directory), filename)
+      );
+      this.bindWatcher(watcher);
       this.watchers.push(watcher);
     } catch {
-      // Best effort; interval refresh still works.
+      // Best effort; fingerprint polling still verifies shared state.
     }
+  }
+
+  private watchClaudeIdeLocks(directory: string): void {
+    try {
+      if (!fs.existsSync(directory)) {
+        fs.mkdirSync(directory, { recursive: true });
+      }
+
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(directory), "*.lock")
+      );
+      this.bindWatcher(watcher);
+      this.watchers.push(watcher);
+    } catch {
+      // Best effort; activity also resolves from the latest bridge state.
+    }
+  }
+
+  private bindWatcher(watcher: vscode.FileSystemWatcher): void {
+    watcher.onDidChange(() => this.scheduleRefresh());
+    watcher.onDidCreate(() => this.scheduleRefresh());
+    watcher.onDidDelete(() => this.scheduleRefresh());
   }
 
   private scheduleRefresh(): void {
@@ -133,7 +155,16 @@ export class FileWatcherService implements vscode.Disposable {
 
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = undefined;
+      this.onRefreshIfStateChanged(true);
+    }, WATCH_DEBOUNCE_MS);
+  }
+
+  private onRefreshIfStateChanged(includeContent: boolean): void {
+    if (this.pollStateFiles(includeContent)) {
+      if (includeContent) {
+        this.lastContentVerifyMs = Date.now();
+      }
       this.onRefresh();
-    }, 250);
+    }
   }
 }
