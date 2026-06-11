@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.15] - 2026-06-11
+
+### Changed
+- Marketplace metadata now includes more precise Claude/Codex rate-limit and status-bar search terms
+- Added the `Machine Learning` category while keeping the visible listing concise
+
 ## [1.2.14] - 2026-06-11
 
 ### Changed

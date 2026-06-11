@@ -2,7 +2,7 @@
   "name": "headroom",
   "displayName": "Headroom",
   "description": "Claude Code and Codex headroom in your VS Code/Cursor status bar.",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "publisher": "edwarddjss",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -22,17 +22,27 @@
   "keywords": [
     "claude",
     "claude code",
+    "claude usage",
+    "claude rate limit",
+    "claude status bar",
     "codex",
     "openai codex",
+    "codex usage",
+    "codex rate limit",
+    "codex status bar",
     "cursor",
+    "cursor extension",
     "usage",
+    "usage tracker",
     "status bar",
     "ai",
+    "ai coding",
+    "ai agent",
     "rate limit",
     "context window",
-    "ai agent",
     "headroom",
     "quota",
+    "quota tracker",
     "tokens",
     "usage remaining"
   ],
@@ -40,6 +50,7 @@
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Machine Learning",
     "Other"
   ],
   "extensionKind": [
