@@ -24,16 +24,3 @@ export function pathDirname(filePath: string): string {
 export function pathBasename(filePath: string): string {
   return path.basename(filePath);
 }
-
-export function toTildePath(filePath: string): string {
-  const home = os.homedir();
-  if (filePath === home) {
-    return "~";
-  }
-
-  if (filePath.startsWith(`${home}/`) || filePath.startsWith(`${home}\\`)) {
-    return `~${filePath.slice(home.length)}`.replace(/\\/g, "/");
-  }
-
-  return filePath;
-}

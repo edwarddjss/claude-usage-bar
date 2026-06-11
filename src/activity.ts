@@ -121,7 +121,10 @@ export function resolveActivity(
       break;
     case "auto":
     default:
-      if (context.focusedTerminalSource === "claude") {
+      if (snapshot.claude && snapshot.codex) {
+        showClaude = Boolean(snapshot.claude);
+        showCodex = Boolean(snapshot.codex);
+      } else if (context.focusedTerminalSource === "claude") {
         showClaude = Boolean(snapshot.claude);
       } else if (context.focusedTerminalSource === "codex") {
         showCodex = Boolean(snapshot.codex);

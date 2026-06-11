@@ -1,176 +1,274 @@
-# Publishing guide
+# Headroom publishing flow
 
-**No — it is not just three commands.** Those three commands are only the final publish step. Before that you need a one-time account setup and a few listing assets. This guide walks through everything in order.
+How this repo gets to **VS Code** and **Cursor**, and how we ship updates from the CLI.
 
 ---
 
-## Phase 1 — One-time accounts (≈15 minutes)
+## What we're publishing
 
-### 1. Create a GitHub repo
+| Field | Value |
+|-------|-------|
+| Extension name (slug) | `headroom` |
+| Marketplace ID | `edwarddjss.headroom` |
+| Publisher | `edwarddjss` (Blackdog Labs) |
+| Display name | Headroom |
+| Entry point | `src/extension.ts` → compiled to `out/extension.js` |
+| Package manager | `pnpm` |
 
-```bash
-cd /home/nazk/Projects/claude-usage-bar
-git add .
-git commit -m "Prepare AI Usage Bar v0.3.0 for marketplace release"
-gh repo create claude-usage-bar --public --source=. --push
+The repo folder is still `claude-usage-bar` on GitHub. The marketplace slug is `headroom`.
+
+---
+
+## Two registries, one VSIX
+
+We publish the **same VSIX** to two places:
+
+| Registry | Who uses it | CLI tool |
+|----------|-------------|----------|
+| [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=edwarddjss.headroom) | VS Code | `@vscode/vsce` |
+| [Open VSX](https://open-vsx.org/extension/edwarddjss/headroom) | Cursor (default extension search) | `ovsx` |
+
+Cursor does not search the Microsoft Marketplace by default. **You must publish to both** or Cursor users won't see updates.
+
+```
+pnpm run package  →  headroom-X.Y.Z.vsix
+        │
+        ├── pnpm dlx @vscode/vsce publish     → VS Code
+        └── pnpm dlx ovsx publish ...vsix     → Cursor / Open VSX
 ```
 
-This gives you a real `repository` URL for the marketplace listing.
-
-### 2. Create a Marketplace publisher
-
-1. Go to [https://marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)
-2. Sign in with the **same Microsoft account** you want tied to the publisher
-3. Click **Create publisher**
-4. Use publisher ID: `edwarddjss` (must match what you put in `package.json`)
-5. Display name: `Edward` (or your preferred public name)
-
-### 3. Create a Personal Access Token (PAT)
-
-1. Go to [https://dev.azure.com](https://dev.azure.com) → User settings → **Personal access tokens**
-2. Click **New Token**
-3. Name: `vsce-publish`
-4. Organization: **All accessible organizations**
-5. Scopes: **Marketplace → Manage**
-6. Copy the token — you only see it once
-
 ---
 
-## Phase 2 — Fill in package.json (2 minutes)
+## One-time setup
 
-Open `package.json` and confirm these fields match your accounts:
+### 1. VS Code Marketplace publisher
+
+1. [marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)
+2. Create publisher: `edwarddjss` (must match `package.json` → `"publisher"`)
+3. Create a PAT at [dev.azure.com](https://dev.azure.com) → User settings → Personal access tokens
+   - Organization: **All accessible organizations**
+   - Scope: **Marketplace → Manage**
+4. Log in once from this repo:
+
+```bash
+pnpm dlx @vscode/vsce login edwarddjss
+# paste PAT when prompted
+```
+
+Credentials are stored in `~/.vsce`.
+
+### 2. Open VSX (Cursor)
+
+1. Account at [open-vsx.org](https://open-vsx.org/)
+2. Profile → **Access Tokens** → generate token
+3. Create namespace (first time only):
+
+```bash
+pnpm dlx ovsx create-namespace edwarddjss -p <OPENVSX_TOKEN>
+```
+
+Namespace `edwarddjss` must match the publisher ID.
+
+### 3. Confirm `package.json` metadata
+
+Already set in this repo:
 
 ```json
 {
+  "name": "headroom",
   "publisher": "edwarddjss",
   "repository": {
-    "type": "git",
     "url": "https://github.com/edwarddjss/claude-usage-bar"
-  },
-  "bugs": {
-    "url": "https://github.com/edwarddjss/claude-usage-bar/issues"
-  },
-  "homepage": "https://github.com/edwarddjss/claude-usage-bar#readme"
+  }
 }
 ```
 
-These are already set in the repo — just change them if your publisher ID or GitHub username differs.
-
 ---
 
-## Phase 3 — Pre-publish checklist
+## Release workflow (every version)
 
-Run through this before publishing:
+### 1. Make changes
 
-- [ ] `pnpm test` — all 39 tests pass
-- [ ] `pnpm run lint` — no TypeScript errors
-- [ ] `media/icon.png` exists (128×128 PNG) ✅
-- [ ] `media/screenshot-*.png` exist for README ✅
-- [ ] README reads like a product page, not a dev doc ✅
-- [ ] `LICENSE` file present ✅
-- [ ] `CHANGELOG.md` updated ✅
-- [ ] Tested in VS Code (F5 Extension Development Host)
-- [ ] Tested in Cursor (install VSIX or F5)
-- [ ] Bridge install command works end-to-end
-- [ ] Publisher ID in `package.json` matches marketplace account
+Source lives in `src/`. Bridge scripts in `scripts/`. Tests in `test/`.
 
-### Optional but recommended
+### 2. Bump version
 
-- [ ] Replace AI-generated screenshots with real ones from your editor (see below)
-- [ ] Publish to [Open VSX](https://open-vsx.org/) for Cursor users who don't use the VS Marketplace
-- [ ] Add a GitHub release tag: `git tag v0.3.0 && git push origin v0.3.0`
+Edit `package.json` → `"version"`. Add an entry to `CHANGELOG.md`.
 
-### Capture real screenshots (recommended before v1.0)
+Semver in practice for this project:
 
-1. Press F5 to open Extension Development Host
-2. Seed test data or run Claude Code / Codex
-3. Screenshot the status bar → save as `media/screenshot-statusbar.png`
-4. Click status bar → screenshot dashboard → `media/screenshot-dashboard.png`
-5. Run both CLIs → screenshot dual bar → `media/screenshot-dual.png`
+- **Patch** (`1.2.1`) — bug fixes, copy, refresh timing
+- **Minor** (`1.3.0`) — features, dashboard changes
+- **Major** (`2.0.0`) — breaking settings/command namespace changes
 
-Real screenshots look more trustworthy than mockups on the marketplace.
+Marketplace rejects re-publishing the same version. Always bump before publish.
 
----
-
-## Phase 4 — Publish (the three commands)
+### 3. Verify locally
 
 ```bash
-# 1. Log in (paste your PAT when prompted)
-pnpm dlx @vscode/vsce login edwarddjss
+pnpm install
+pnpm test          # unit tests (render, bridge, activity, etc.)
+pnpm run lint      # tsc --noEmit
+```
 
-# 2. Build the VSIX
+Optional manual check:
+
+```bash
+pnpm run watch     # terminal 1 — compile on save
+# F5 in VS Code/Cursor — Extension Development Host
+```
+
+Or install the built VSIX locally:
+
+```bash
 pnpm run package
+cursor --install-extension headroom-$(node -p "require('./package.json').version").vsix --force
+# or: code --install-extension headroom-....vsix --force
+```
 
-# 3. Publish to VS Code Marketplace
+### 4. Build the VSIX
+
+```bash
+pnpm run package
+```
+
+This runs `tsc`, then `vsce package --no-dependencies`. Output:
+
+```
+headroom-<version>.vsix
+```
+
+Included assets are controlled by `.vscodeignore` (excludes `src/`, `test/`, dev configs; ships `out/`, `scripts/`, `media/`).
+
+`vsce publish` also runs `vscode:prepublish` → `pnpm run compile` automatically, but we still `package` first so Open VSX gets the same file.
+
+### 5. Publish to VS Code Marketplace
+
+```bash
 pnpm dlx @vscode/vsce publish
 ```
 
-After publish, your listing appears at:
+Uses version from `package.json`. Requires prior `vsce login`.
 
-`https://marketplace.visualstudio.com/items?itemName=edwarddjss.claude-usage-bar`
+Verify:
 
-Users install with:
-
+```bash
+pnpm dlx @vscode/vsce show edwarddjss.headroom
 ```
-ext install edwarddjss.claude-usage-bar
+
+Listing URL may take a few minutes to propagate:
+
+`https://marketplace.visualstudio.com/items?itemName=edwarddjss.headroom`
+
+### 6. Publish to Open VSX (Cursor)
+
+```bash
+pnpm dlx ovsx publish headroom-<version>.vsix -p <OPENVSX_TOKEN>
+```
+
+Example:
+
+```bash
+pnpm dlx ovsx publish headroom-1.2.1.vsix -p "$OVSX_PAT"
+```
+
+Open VSX can take 30–60 seconds before the new version appears in search. If publish says **"already published but isn't active"**, wait a minute and check the [extension page](https://open-vsx.org/extension/edwarddjss/headroom). Delete stuck inactive versions from Open VSX → Settings → Extensions if needed.
+
+### 7. Tag the release (optional)
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 ---
 
-## Phase 5 — Open VSX (optional, for Cursor)
-
-Some Cursor users install from Open VSX instead of the VS Marketplace.
-
-1. Create account at [https://open-vsx.org/](https://open-vsx.org/)
-2. Generate an access token in your profile
-3. Publish:
+## Quick reference — full release
 
 ```bash
-pnpm dlx ovsx publish claude-usage-bar-0.3.0.vsix -p <your-openvsx-token>
-```
+# 1. bump version in package.json + CHANGELOG.md
 
----
-
-## Updating after the first publish
-
-For each new version:
-
-1. Bump `"version"` in `package.json` (e.g. `0.3.1`)
-2. Add entry to `CHANGELOG.md`
-3. Run:
-
-```bash
 pnpm test
 pnpm run package
+
 pnpm dlx @vscode/vsce publish
+pnpm dlx ovsx publish headroom-$(node -p "require('./package.json').version").vsix -p "$OVSX_PAT"
 ```
 
 ---
 
-## What makes a listing look "real"
+## How users get updates
 
-| Element | Status in this repo |
-|---------|-------------------|
-| Professional README with screenshots | ✅ |
-| 128×128 icon | ✅ |
-| MIT license | ✅ |
-| Changelog | ✅ |
-| Clear install + setup steps | ✅ |
-| Privacy section | ✅ |
-| Compatibility table | ✅ |
-| GitHub repo link | ⏳ You need to push to GitHub |
-| Real product screenshots | ⏳ Replace mockups when ready |
-| Publisher account | ⏳ You need to create this once |
-| User reviews | — comes after launch |
+| Editor | Source | Update path |
+|--------|--------|-------------|
+| VS Code | Microsoft Marketplace | Extensions → Headroom → Update |
+| Cursor | Open VSX | Extensions → Headroom → Update |
+
+Users on an old local VSIX install (`--install-extension headroom-X.vsix`) do **not** auto-update. They need to install from the marketplace or reinstall a new VSIX.
 
 ---
 
-## Common publish errors
+## What gets published
 
-| Error | Fix |
-|-------|-----|
-| `Publisher not found` | Create publisher at marketplace.visualstudio.com/manage |
-| `Extension name already taken` | Change `"name"` in package.json to something unique |
-| `Invalid PAT` | Regenerate token with **Marketplace → Manage** scope |
-| `version must be greater` | Bump version in package.json before re-publishing |
-| Missing `repository` | Fill in package.json repository field |
+```
+headroom.vsix
+├── package.json          # manifest, commands, settings
+├── out/                  # compiled TypeScript
+├── scripts/              # bridge scripts (copied locally on activate; Codex uses the extension poller)
+├── media/                # icon + README screenshots
+├── README.md             # marketplace listing body
+├── CHANGELOG.md
+└── LICENSE
+```
+
+Not published: `src/`, `test/`, `.vscode/`, `node_modules/`.
+
+---
+
+## Common errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Extension name already exists` | `name` slug taken globally | We use `headroom` — don't rename back to `claude-usage-bar` |
+| `version must be greater` | Same version already published | Bump `package.json` version |
+| `Publisher not found` | Publisher ID mismatch | `package.json` `"publisher"` must be `edwarddjss` |
+| `Invalid PAT` / 401 | Expired or wrong-scope token | Regenerate with **Marketplace → Manage** |
+| Open VSX `isn't active` | Registry propagation / stuck upload | Wait 1 min, check open-vsx.org UI, delete bad version, republish |
+| `ENOENT headroom-X.vsix` | Forgot to package before `ovsx publish` | Run `pnpm run package` first |
+| Listing 404 right after publish | CDN lag | Normal — API and `vsce show` confirm success first |
+
+---
+
+## Credentials on this machine
+
+| Tool | Stored in |
+|------|-----------|
+| `vsce` | `~/.vsce` (PAT for `edwarddjss`) |
+| `ovsx` | Pass `-p` each time, or set `OVSX_PAT` env var |
+
+Never commit tokens. Rotate if exposed.
+
+---
+
+## Repo scripts
+
+| Command | What it does |
+|---------|--------------|
+| `pnpm run compile` | `tsc` → `out/` |
+| `pnpm run watch` | compile on save |
+| `pnpm test` | compile + `node --test test/*.test.js` |
+| `pnpm run lint` | `tsc --noEmit` |
+| `pnpm run package` | compile + `vsce package` → `.vsix` |
+
+---
+
+## Checklist before every release
+
+- [ ] Version bumped in `package.json`
+- [ ] `CHANGELOG.md` updated
+- [ ] `pnpm test` passes
+- [ ] Tested in Extension Development Host or local VSIX
+- [ ] `pnpm run package` succeeds
+- [ ] `vsce publish` → VS Code Marketplace
+- [ ] `ovsx publish` → Open VSX / Cursor
+- [ ] Optional: git tag + GitHub release

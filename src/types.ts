@@ -29,6 +29,13 @@ export interface BridgeState {
   cost?: {
     sessionUsd?: number | null;
   };
+  credits?: {
+    hasCredits?: boolean | null;
+    unlimited?: boolean | null;
+    balance?: number | null;
+    planType?: string | null;
+    rateLimitReachedType?: string | null;
+  };
 }
 
 export interface UsageSnapshot {
@@ -54,8 +61,10 @@ export interface RenderOptions {
   primaryMetric: PrimaryMetric;
   barWidth: number;
   showIcon: boolean;
+  displayMode?: DisplayMode;
   nowMs?: number;
   activity?: ResolvedActivity;
+  bridgeConfigured?: boolean;
 }
 
 export interface ClaudeIdeLock {

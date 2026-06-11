@@ -58,21 +58,40 @@ function extractSanitizedState(input) {
     toNumber(contextWindow.remaining_percentage) ??
     toNumber(contextWindow.remaining_percent);
 
-  const fiveHourPct =
-    toNumber(fiveHourSource.used_percent) ?? toNumber(fiveHourSource.used_percentage);
-  const sevenDayPct =
-    toNumber(sevenDaySource.used_percent) ?? toNumber(sevenDaySource.used_percentage);
-
   const tokenInfo =
     data.info && typeof data.info === "object" ? data.info : {};
+  const credits =
+    rateLimits?.credits && typeof rateLimits.credits === "object"
+      ? rateLimits.credits
+      : {};
   const lastUsage =
     tokenInfo.last_token_usage && typeof tokenInfo.last_token_usage === "object"
       ? tokenInfo.last_token_usage
       : {};
+  const contextWindowSize =
+    toNumber(tokenInfo.model_context_window) ??
+    toNumber(contextWindow.size) ??
+    toNumber(contextWindow.total_tokens);
+
+  const inputTokens = toNumber(lastUsage.input_tokens ?? contextWindow.input_tokens);
+  const outputTokens = toNumber(lastUsage.output_tokens ?? contextWindow.output_tokens);
+  const totalContextTokens =
+    toNumber(lastUsage.total_tokens) ??
+    sumNumbers(
+      toNumber(contextWindow.input_tokens),
+      toNumber(contextWindow.output_tokens)
+    );
+  const calculatedContext =
+    contextWindowSize && totalContextTokens != null
+      ? (totalContextTokens / contextWindowSize) * 100
+      : null;
+
+  const fiveHourPct = getUsedPercentage(fiveHourSource);
+  const sevenDayPct = getUsedPercentage(sevenDaySource);
 
   return {
     source: "codex",
-    updatedAt: Date.now(),
+    updatedAt: normalizeTimestamp(data.updated_at ?? data.timestamp) ?? Date.now(),
     sessionId:
       typeof data.session_id === "string"
         ? data.session_id
@@ -84,9 +103,11 @@ function extractSanitizedState(input) {
         ? data.model
         : typeof data.model_name === "string"
           ? data.model_name
-          : null,
+          : typeof rateLimits?.limit_name === "string"
+            ? rateLimits.limit_name
+            : null,
     cwd: typeof data.cwd === "string" ? data.cwd : null,
-    pid: typeof data.pid === "number" ? data.pid : process.ppid,
+    pid: typeof data.pid === "number" ? data.pid : null,
     fiveHour: {
       usedPercentage: fiveHourPct,
       resetsAt: normalizeTimestamp(
@@ -100,17 +121,69 @@ function extractSanitizedState(input) {
       ),
     },
     context: {
-      usedPercentage: usedContext,
+      usedPercentage: usedContext ?? calculatedContext,
       remainingPercentage:
         remainingContext ??
-        (usedContext != null ? Math.max(0, 100 - usedContext) : null),
-      inputTokens: toNumber(lastUsage.input_tokens ?? contextWindow.input_tokens),
-      outputTokens: toNumber(lastUsage.output_tokens ?? contextWindow.output_tokens),
+        (usedContext != null
+          ? Math.max(0, 100 - usedContext)
+          : calculatedContext != null
+            ? Math.max(0, 100 - calculatedContext)
+            : null),
+      inputTokens,
+      outputTokens,
     },
     cost: {
       sessionUsd: toNumber(data.cost?.total_cost_usd ?? data.cost?.session_usd),
     },
+    credits: {
+      hasCredits:
+        typeof credits.has_credits === "boolean" ? credits.has_credits : null,
+      unlimited:
+        typeof credits.unlimited === "boolean" ? credits.unlimited : null,
+      balance: toNumber(credits.balance),
+      planType: typeof rateLimits?.plan_type === "string" ? rateLimits.plan_type : null,
+      rateLimitReachedType:
+        typeof rateLimits?.rate_limit_reached_type === "string"
+          ? rateLimits.rate_limit_reached_type
+          : null,
+    },
   };
+}
+
+function getUsedPercentage(source) {
+  const direct =
+    toNumber(source.used_percent) ??
+    toNumber(source.used_percentage) ??
+    toNumber(source.percent_used);
+  if (direct != null) {
+    return direct <= 1 && direct >= 0 ? direct * 100 : direct;
+  }
+
+  const used = toNumber(source.used);
+  const limit = toNumber(source.limit ?? source.total);
+  if (used != null && limit && limit > 0) {
+    return (used / limit) * 100;
+  }
+
+  const remaining =
+    toNumber(source.remaining_percent) ??
+    toNumber(source.remaining_percentage) ??
+    toNumber(source.percent_remaining);
+  if (remaining != null) {
+    const normalized = remaining <= 1 && remaining >= 0 ? remaining * 100 : remaining;
+    return 100 - normalized;
+  }
+
+  return null;
+}
+
+function sumNumbers(...values) {
+  const present = values.filter((value) => value != null);
+  if (present.length === 0) {
+    return null;
+  }
+
+  return present.reduce((sum, value) => sum + value, 0);
 }
 
 /**

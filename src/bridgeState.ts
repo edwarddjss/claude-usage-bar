@@ -3,29 +3,30 @@ import { LEGACY_STATE_PATH } from "./constants";
 import { expandHome } from "./paths";
 import type { BridgeState, UsageSnapshot } from "./types";
 
-export {
-  DEFAULT_BRIDGE_DIR,
-  DEFAULT_CLAUDE_STATE_PATH,
-  DEFAULT_CODEX_STATE_PATH,
-  LEGACY_STATE_PATH,
-} from "./constants";
-
-export type { BridgeState, UsageMetric, UsageSnapshot, UsageSource } from "./types";
-
 export function readBridgeState(filePath: string): BridgeState | null {
   const resolved = expandHome(filePath);
 
-  try {
-    if (!fs.existsSync(resolved)) {
-      return null;
-    }
-
-    const raw = fs.readFileSync(resolved, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    return sanitizeBridgeState(parsed);
-  } catch {
+  if (!fs.existsSync(resolved)) {
     return null;
   }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const raw = fs.readFileSync(resolved, "utf8").trim();
+      if (!raw || raw === "{}") {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as unknown;
+      return sanitizeBridgeState(parsed);
+    } catch {
+      if (attempt < 2) {
+        continue;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function readUsageSnapshot(
@@ -61,6 +62,7 @@ export function sanitizeBridgeState(input: unknown): BridgeState | null {
     sevenDay: sanitizeMetric(data.sevenDay),
     context: sanitizeContext(data.context),
     cost: sanitizeCost(data.cost),
+    credits: sanitizeCredits(data.credits),
   };
 }
 
@@ -98,6 +100,26 @@ function sanitizeCost(value: unknown): BridgeState["cost"] {
   const cost = value as Record<string, unknown>;
   return {
     sessionUsd: toNumber(cost.sessionUsd),
+  };
+}
+
+function sanitizeCredits(value: unknown): BridgeState["credits"] {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const credits = value as Record<string, unknown>;
+  return {
+    hasCredits:
+      typeof credits.hasCredits === "boolean" ? credits.hasCredits : undefined,
+    unlimited:
+      typeof credits.unlimited === "boolean" ? credits.unlimited : undefined,
+    balance: toNumber(credits.balance),
+    planType: typeof credits.planType === "string" ? credits.planType : undefined,
+    rateLimitReachedType:
+      typeof credits.rateLimitReachedType === "string"
+        ? credits.rateLimitReachedType
+        : undefined,
   };
 }
 

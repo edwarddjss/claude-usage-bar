@@ -2,26 +2,34 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { expandHome, toTildePath } from "./paths";
+import {
+  formatNodeCommand,
+  getBridgePaths,
+  installBridgeScriptsToDisk,
+} from "./bridgeSetupCore";
+import { expandHome } from "./paths";
 import type { ExtensionSettings } from "./types";
 
-export function buildBridgeSetupText(settings: ExtensionSettings): string {
-  const claudeBridge = toTildePath(path.join(os.homedir(), ".claude", "claude-status-bridge.js"));
-  const codexBridge = toTildePath(path.join(os.homedir(), ".codex", "codex-status-bridge.js"));
-  const codexPoller = toTildePath(path.join(os.homedir(), ".codex", "codex-usage-poller.js"));
+function buildBridgeSetupText(settings: ExtensionSettings): string {
+  const paths = getBridgePaths();
+  const claudeCommand = formatNodeCommand(paths.claudeBridge);
+  const platform =
+    process.platform === "win32" ? "Windows" : process.platform === "darwin" ? "macOS" : "Linux";
 
   return [
-    "AI Usage Bar bridge setup",
-    "Works in VS Code, Cursor, and remote hosts (WSL, SSH).",
+    "Headroom bridge setup",
+    `Platform: ${platform} — paths use your home directory (${os.homedir()}).`,
+    "",
+    "Headroom configures itself automatically on install.",
+    "If usage is missing, run: Headroom: Install Bridge Scripts",
     "",
     "Claude Code:",
-    `1. Install bridge scripts (Command: AI Usage: Install Bridge Scripts)`,
-    "2. Add to ~/.claude/settings.json:",
+    `1. Add to ${path.join(os.homedir(), ".claude", "settings.json")}:`,
     JSON.stringify(
       {
         statusLine: {
           type: "command",
-          command: `node ${claudeBridge}`,
+          command: claudeCommand,
           refreshInterval: 1,
         },
       },
@@ -29,13 +37,10 @@ export function buildBridgeSetupText(settings: ExtensionSettings): string {
       2
     ),
     "",
-    "Codex CLI:",
-    "1. Install bridge scripts",
-    "2. Add to ~/.codex/config.toml:",
-    `[[hooks]]\nevent = "AfterAgent"\ncommand = "node ${codexBridge}"`,
+    "Codex:",
+    "No Codex config changes are required. Headroom reads local Codex session telemetry while VS Code or Cursor is running.",
     "",
-    "3. Start the Codex poller in a background terminal:",
-    `node ${codexPoller} --interval 2000`,
+    "Use Claude Code or Codex from the extension UI, terminal TUI, or CLI. Headroom will show usage when local data is available.",
     "",
     `Claude state: ${expandHome(settings.claudeStatePath)}`,
     `Codex state: ${expandHome(settings.codexStatePath)}`,
@@ -44,29 +49,21 @@ export function buildBridgeSetupText(settings: ExtensionSettings): string {
 
 export async function copyBridgeSetup(settings: ExtensionSettings): Promise<void> {
   await vscode.env.clipboard.writeText(buildBridgeSetupText(settings));
-  await vscode.window.showInformationMessage("AI Usage bridge setup copied to clipboard.");
+  await vscode.window.showInformationMessage("Headroom bridge setup copied to clipboard.");
 }
 
 export async function installBridgeScripts(extensionPath: string): Promise<void> {
-  const scriptsDir = path.join(extensionPath, "scripts");
-  const targets = [
-    { dir: path.join(os.homedir(), ".claude"), files: ["bridge-common.js", "claude-status-bridge.js"] },
-    { dir: path.join(os.homedir(), ".codex"), files: ["bridge-common.js", "codex-status-bridge.js", "codex-usage-poller.js"] },
-  ];
+  const result = installBridgeScriptsToDisk(extensionPath);
 
-  for (const target of targets) {
-    fs.mkdirSync(target.dir, { recursive: true });
-
-    for (const file of target.files) {
-      const source = path.join(scriptsDir, file);
-      const destination = path.join(target.dir, file);
-      fs.copyFileSync(source, destination);
-      fs.chmodSync(destination, 0o755);
-    }
+  if (result.errors.length > 0) {
+    await vscode.window.showErrorMessage(
+      `Headroom bridge install failed: ${result.errors[0]}`
+    );
+    return;
   }
 
   await vscode.window.showInformationMessage(
-    "Bridge scripts installed to ~/.claude and ~/.codex."
+    "Headroom bridge ready. Use Claude Code or Codex to see usage."
   );
 }
 

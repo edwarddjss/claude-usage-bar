@@ -43,7 +43,7 @@ describe("isClaudeConnectedToWorkspace", () => {
 });
 
 describe("resolveActivity", () => {
-  it("prefers focused terminal source in auto mode", () => {
+  it("keeps split view in auto mode while tracking focused terminal source", () => {
     const snapshot = {
       claude: makeState("claude"),
       codex: makeState("codex"),
@@ -57,7 +57,8 @@ describe("resolveActivity", () => {
     });
 
     assert.equal(activity.showCodex, true);
-    assert.equal(activity.showClaude, false);
+    assert.equal(activity.showClaude, true);
+    assert.equal(activity.mode, "dual");
     assert.equal(activity.primarySource, "codex");
   });
 

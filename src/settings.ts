@@ -20,7 +20,7 @@ export function getExtensionSettings(): ExtensionSettings {
     activeThresholdMs: config.get<number>("activeThresholdMs", 15_000),
     primaryMetric: config.get("primaryMetric", "fiveHour"),
     statusBarAlignment: config.get("statusBarAlignment", "right"),
-    refreshIntervalMs: config.get<number>("refreshIntervalMs", 1_000),
+    refreshIntervalMs: config.get<number>("refreshIntervalMs", 500),
     barWidth: config.get<number>("barWidth", 8),
     showIcon: config.get<boolean>("showIcon", true),
   };

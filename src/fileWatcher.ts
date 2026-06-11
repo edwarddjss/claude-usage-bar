@@ -6,6 +6,8 @@ import type { ExtensionSettings } from "./types";
 export class FileWatcherService implements vscode.Disposable {
   private watchers: fs.FSWatcher[] = [];
   private refreshTimer: ReturnType<typeof setInterval> | undefined;
+  private debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly fileMtimes = new Map<string, number>();
 
   constructor(
     private readonly settings: ExtensionSettings,
@@ -15,11 +17,13 @@ export class FileWatcherService implements vscode.Disposable {
   start(): void {
     this.stop();
 
-    const watchedFiles = new Set([
-      pathBasename(this.settings.claudeStatePath),
-      pathBasename(this.settings.codexStatePath),
-      pathBasename(this.settings.legacyStatePath),
-    ]);
+    const stateFiles = [
+      expandHome(this.settings.claudeStatePath),
+      expandHome(this.settings.codexStatePath),
+      expandHome(this.settings.legacyStatePath),
+    ];
+
+    const watchedFiles = new Set(stateFiles.map(pathBasename));
 
     const watchedDirs = new Set([
       pathDirname(this.settings.claudeStatePath),
@@ -33,7 +37,9 @@ export class FileWatcherService implements vscode.Disposable {
     }
 
     this.refreshTimer = setInterval(() => {
-      this.onRefresh();
+      if (this.pollStateFiles(stateFiles)) {
+        this.onRefresh();
+      }
     }, this.settings.refreshIntervalMs);
   }
 
@@ -42,15 +48,50 @@ export class FileWatcherService implements vscode.Disposable {
       watcher.close();
     }
     this.watchers = [];
+    this.fileMtimes.clear();
 
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = undefined;
     }
+
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = undefined;
+    }
   }
 
   dispose(): void {
     this.stop();
+  }
+
+  private pollStateFiles(stateFiles: string[]): boolean {
+    let changed = false;
+
+    for (const filePath of stateFiles) {
+      try {
+        if (!fs.existsSync(filePath)) {
+          continue;
+        }
+
+        const mtime = fs.statSync(filePath).mtimeMs;
+        const previous = this.fileMtimes.get(filePath);
+
+        if (previous == null) {
+          this.fileMtimes.set(filePath, mtime);
+          continue;
+        }
+
+        if (mtime !== previous) {
+          this.fileMtimes.set(filePath, mtime);
+          changed = true;
+        }
+      } catch {
+        // Best effort.
+      }
+    }
+
+    return changed;
   }
 
   private watchDirectory(directory: string, watchedFiles: Set<string>): void {
@@ -61,13 +102,13 @@ export class FileWatcherService implements vscode.Disposable {
 
       const watcher = fs.watch(directory, (_eventType, filename) => {
         if (!filename) {
-          this.onRefresh();
+          this.scheduleRefresh();
           return;
         }
 
         const name = filename.toString();
         if (watchedFiles.has(name) || name.endsWith(".lock")) {
-          this.onRefresh();
+          this.scheduleRefresh();
         }
       });
 
@@ -75,5 +116,16 @@ export class FileWatcherService implements vscode.Disposable {
     } catch {
       // Best effort; interval refresh still works.
     }
+  }
+
+  private scheduleRefresh(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = undefined;
+      this.onRefresh();
+    }, 250);
   }
 }

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { resolveActivity } from "./activity";
 import { readUsageSnapshot } from "./bridgeState";
 import { COMMANDS } from "./constants";
-import { openDashboard } from "./dashboard";
+import { openDashboard, refreshDashboardIfOpen } from "./dashboard";
 import { FileWatcherService } from "./fileWatcher";
 import { renderStatusBarText, renderTooltip } from "./renderBar";
 import { getExtensionSettings } from "./settings";
@@ -14,6 +14,10 @@ export class UsageBarController implements vscode.Disposable {
   private readonly terminalTracker: TerminalTracker;
   private fileWatcher: FileWatcherService | undefined;
   private snapshot: UsageSnapshot = { claude: null, codex: null };
+  private bridgeConfigured = false;
+  private lastStatusText: string | undefined;
+  private lastTooltip: string | undefined;
+  private statusShown = false;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.terminalTracker = new TerminalTracker();
@@ -29,6 +33,10 @@ export class UsageBarController implements vscode.Disposable {
     return this.snapshot;
   }
 
+  setBridgeConfigured(configured: boolean): void {
+    this.bridgeConfigured = configured;
+  }
+
   refresh(): void {
     this.refreshSnapshot();
     this.updateStatusBar();
@@ -36,8 +44,7 @@ export class UsageBarController implements vscode.Disposable {
 
   restart(settings?: ExtensionSettings): void {
     if (settings) {
-      this.statusBarItem.dispose();
-      this.statusBarItem = this.createStatusBarItem(settings);
+      this.replaceStatusBarItem(settings);
     }
 
     this.restartWatchers();
@@ -47,7 +54,18 @@ export class UsageBarController implements vscode.Disposable {
   dispose(): void {
     this.fileWatcher?.dispose();
     this.terminalTracker.dispose();
+    this.statusBarItem.hide();
     this.statusBarItem.dispose();
+  }
+
+  private replaceStatusBarItem(settings: ExtensionSettings): void {
+    this.statusBarItem.hide();
+    this.statusBarItem.dispose();
+    this.statusBarItem = this.createStatusBarItem(settings);
+    this.lastStatusText = undefined;
+    this.lastTooltip = undefined;
+    this.statusShown = false;
+    this.context.subscriptions.push(this.statusBarItem);
   }
 
   private createStatusBarItem(settings: ExtensionSettings): vscode.StatusBarItem {
@@ -58,7 +76,7 @@ export class UsageBarController implements vscode.Disposable {
 
     const item = vscode.window.createStatusBarItem(alignment, 100);
     item.command = COMMANDS.openDashboard;
-    item.name = "AI Usage";
+    item.name = "Headroom";
     return item;
   }
 
@@ -95,13 +113,38 @@ export class UsageBarController implements vscode.Disposable {
       primaryMetric: settings.primaryMetric,
       barWidth: settings.barWidth,
       showIcon: settings.showIcon,
+      displayMode: settings.displayMode,
       nowMs,
       activity,
+      bridgeConfigured: this.bridgeConfigured,
     };
 
-    this.statusBarItem.text = renderStatusBarText(this.snapshot, renderOptions);
-    this.statusBarItem.tooltip = renderTooltip(this.snapshot, renderOptions);
-    this.statusBarItem.show();
+    const nextText = renderStatusBarText(this.snapshot, renderOptions);
+    const nextTooltip = renderTooltip(this.snapshot, renderOptions);
+
+    if (nextText !== this.lastStatusText) {
+      this.statusBarItem.text = nextText;
+      this.lastStatusText = nextText;
+    }
+
+    if (nextTooltip !== this.lastTooltip) {
+      this.statusBarItem.tooltip = nextTooltip;
+      this.lastTooltip = nextTooltip;
+    }
+
+    if (!this.statusShown) {
+      this.statusBarItem.show();
+      this.statusShown = true;
+    }
+
+    refreshDashboardIfOpen(
+      this.snapshot,
+      {
+        claudeStatePath: settings.claudeStatePath,
+        codexStatePath: settings.codexStatePath,
+      },
+      activity
+    );
   }
 
   openDashboardPanel(): void {
